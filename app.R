@@ -20,6 +20,13 @@ options(mysql = list(
     "port" = 3306
 ))
 
+
+glue_sql <- function(..., .con) {
+    connection <- pool::poolCheckout(.con)
+    on.exit(pool::poolReturn(connection))  
+    glue::glue_sql(..., .con = connection, .envir = parent.frame())  
+}
+
 # databaseName <- 'staffing-data'
 # table <- 'ROR_CandidateRoot'
 
@@ -229,7 +236,7 @@ createCandidateData <- function(data) {
         ({`var`*})
         VALUES ({values*})", .con=db
     )
-   # print(query)
+   print(query)
 
     dbGetQuery(db, query)
     poolClose(db)
