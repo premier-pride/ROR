@@ -266,6 +266,10 @@ createInterviewData <- function(data) {
     db <- dbPool(MySQL(), dbname = 'staffing-data', host = options()$mysql$host,
                  port = options()$mysql$port, user = options()$mysql$user,
                  password = options()$mysql$password)
+    interviewtime <- strftime(as_datetime(as.numeric(data[['interviewDateTime']])),
+                    format="%Y-%m-%d %H:%M:%OS", tz = "GMT")
+    data[['interviewDateTime']] <- interviewtime
+    
     var <- c('aident','ror_srident', 'interview_datetime', 
              'interview_status_id')
     values <- data
@@ -277,6 +281,7 @@ createInterviewData <- function(data) {
     )
     
     # Submit the update query and disconnect
+    #print(query)
     dbGetQuery(db, query)
     poolClose(db)
     
@@ -299,13 +304,13 @@ createInterviewData <- function(data) {
         `x-tw-token` = token,
         `Content-Type` = 'application/json'
     )
-    
+
     httr::POST(url = paste0('https://api.ontempworks.com/Employees/',aident,
                             '/messages'), httr::add_headers("x-tw-token"= token,
                                                             "Content-Type" = 'application/json'),
                             body = bodyData)
-    
-    #print(bodyData)
+
+    # print(bodyData)
     
 }
 
@@ -391,6 +396,15 @@ ui <- dashboardPage(
         
     ),
     dashboardBody(
+        HTML('<input type="text" id="client_time_zone_offset" name="client_time_zone_offset" style="display: none;"> '),
+        
+        tags$script('
+        $(function() {
+        var time_now = new Date()
+        $("input#client_time_zone_offset").val(time_now.getTimezoneOffset())
+        });
+        '),
+        
         useShinyjs(),
         tabItems(
             tabItem(
@@ -403,19 +417,23 @@ ui <- dashboardPage(
             tabItem(
                 'Person',
                 actionButton('NewPerson','New Person'),
+                #verbatimTextOutput("test"),
                 DT::dataTableOutput("personTable")
                 # tableOutput("text")
             ),
             tabItem(
                 'Contact',
                 #actionButton('NewContact','New Contact'),
-                DT::dataTableOutput("contactTable")
+                DT::dataTableOutput("contactTable"),
+                
+                verbatimTextOutput("time_zone_offset")
+                
             ),
             tabItem(
                 'Interviews',
                 #actionButton('NewInterview','New Interview'),
                 DT::dataTableOutput("interviewTable"),
-                #verbatimTextOutput("test"),
+                # verbatimTextOutput("test"),
                 tags$style(".datepicker { z-index: 9999 !important; }"),
                 tags$style(
                     type = 'text/css',
@@ -472,6 +490,7 @@ server <- function(input, output, session) {
     selectedRORsrident <- reactiveVal(0)
     selectedname <- reactiveValues(firstName = NULL, LastName = NULL)
     selectedInterviewID <- reactiveVal(0)
+    time_zone_offset <- reactive({as.numeric(input$client_time_zone_offset)/60})
 
     # input$testTime <- reactive({strftime(input$interviewTime)})
     # output$test <- renderUI({strftime(input[['interviewTime']],'%T')})
@@ -484,9 +503,12 @@ server <- function(input, output, session) {
     interviewFormData <- reactive({
         data <- sapply(interviewFields, function(x) input[[x]])
          #names(data)
-        data["interviewDateTime"] <- strftime(as.POSIXct(as.numeric(data["interviewDateTime"]),
-                   origin = "1970-01-01"),
-        format = "%Y-%m-%d %H:%M:%S")
+        inputtime <- data["interviewDateTime"]
+        data["interviewDateTime"] <- as_datetime(as.numeric(data["interviewDateTime"])) - hours(time_zone_offset())     
+        # data["interviewDateTime"] <- strftime(as.numeric(as.character(data["interviewDateTime"])),
+        #                                         origin = '1970-01-01',)
+            
+        # data['interviewDateTime'] <- strftime(.,format = "%Y-%m-%d %H:%M:%S")
          data
         # strftime(data$,'%T')
     })
