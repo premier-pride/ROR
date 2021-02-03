@@ -858,7 +858,7 @@ server <- function(input, output, session) {
     })
     
     ConversionPct <- reactive({
-        round((CompletedInterviews()/totalContacts())*100,1)
+        round((CompletedInterviews()/totalInterviews())*100,1)
     })
     
     output$candidatesBox <- renderValueBox({
