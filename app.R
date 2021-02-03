@@ -10,6 +10,7 @@ library(httr)
 library(jsonlite)
 library(DT)
 library(shinyWidgets)
+library(daterangepicker)
 
 
 # Define the fields we want to save from the form
@@ -47,7 +48,7 @@ mandatoryInterviewFields <- c('interviewSrident','interviewDateTime','interviewS
 
 
 # Load all previous responses
-# ---- This is one of the two functions we will change for every storage type ----
+
 loadData <- function(databaseName,table) {
     # Connect to the database
     db <- dbPool(MySQL(), dbname = databaseName, host = options()$mysql$host, 
@@ -118,10 +119,6 @@ contactModal <- function(aident = 0, srident = 0, name = NULL) {
                                     NA_integer_,
                                     aident)),
         disabled(textInput('contactEmpName','Employee Name', value = name)),
-        # numericInput('contactSrident', 'Recruiter Number',
-        #              value = ifelse(srident == 0,
-        #                             NA_integer_,
-        #                             srident)),
         selectInput("contactSrident","Recruiter",
                     choices = c('',srList),
                     selected = ''),
@@ -147,10 +144,20 @@ interviewModal <- function(aident = 0, srident = 0, name = NULL) {
         selectInput('interviewSrident', 'Recruiter',
                     choices = c('',srList),
                     selected = ''),
-        airDatepickerInput("interviewDateTime","Interview Time", timepicker = TRUE,
-                           todayButton = TRUE,
-                           timepickerOpts = timepickerOptions(minutesStep = 10),
-                           autoClose = TRUE),
+        daterangepicker(
+            "interviewDateTime",
+            label = "Interview Time",
+            start = '',
+            min = as.Date('2021-01-01'),
+            max = Sys.Date()+days(90),
+            options = daterangepickerOptions(timePicker = TRUE,
+                                             timePickerIncrement = 10,
+                                             autoUpdateInput = FALSE,
+                                             locale = list(
+                                                 format = 'YYYY-MM-DD hh:mm'
+                                             ),
+                                             singleDatePicker = TRUE)
+        ),
         selectInput('interviewStatusId', 'Interview Status', 
                     choices = c('',intStatusList),
                     selected = 1),
@@ -162,9 +169,13 @@ interviewModal <- function(aident = 0, srident = 0, name = NULL) {
     )
 }
 
-candidateClickModal <- function(contactdata = NULL, interviewdata = NULL){
+candidateClickModal <- function(contactdata = NULL, 
+                                interviewdata = NULL, 
+                                rowdata = NULL){
     modalDialog(
         h2("What would you like to do?"),
+        h3("Candidate Info"),
+        renderDataTable(datatable(rowdata)),
         h3("Previous Contacts"),
         renderDataTable(datatable(contactdata,
                                   rownames = FALSE,
@@ -221,7 +232,6 @@ interviewClickModal <- function(){
 
 createCandidateData <- function(data) {
     # Connect to the database
-    
     db <- dbPool(MySQL(), dbname = 'staffing-data', host = options()$mysql$host,
                  port = options()$mysql$port, user = options()$mysql$user,
                  password = options()$mysql$password)
@@ -324,8 +334,7 @@ updateCandidateData <- function(data) {
              'cell_number', 'branch_id','ror_srident')
     values <- data
     tableroot <- 'ROR_CandidateRoot'
-    
-    #print(glue("SET {var*} = {data*},",.na = '',.sep = ','))
+
     aident <-  as.numeric(data[1])
     
     query <- glue_sql(
@@ -359,7 +368,6 @@ updateInterviewData <- function(InterviewID, InterviewStatus){
     poolClose(db)
 }
 
-# updateTwEmployeeMessage <- function(DateTime,)
 
 
 ################################################################################################3
@@ -369,9 +377,6 @@ ui <- dashboardPage(
     dashboardHeader(title = 'ROR'),
     dashboardSidebar(
         sidebarMenu(id ="sidebarmenu",
-            menuItem(
-                "Main Dashboard",tabName = "Main", icon = icon("dashboard")
-            ),
             menuItem(
                 "Candidates",
                 tabName = 'Candidates',
@@ -389,6 +394,43 @@ ui <- dashboardPage(
                 menuSubItem(
                     'Interviews',
                     tabName = 'Interviews',
+                    icon = icon("calendar")
+                )
+            ),
+            menuItem(
+                "Main Dashboard",tabName = "Main", icon = icon("dashboard"),
+                menuSubItem(
+                    'Overall',
+                    tabName = 'Main',
+                    icon = icon("calendar")
+                ),
+                selectInput("dashboardSrident","Recruiter",
+                            choices = c('OVERALL',ServiceRepData$rep_name),
+                            selected = 'OVERALL'),
+                tags$head(tags$style(".myclass {background-color: #222d32;}")),
+                daterangepicker(
+                    inputId = "daterange",
+                    label = h5("Pick a Date"),
+                    min = as.Date('2021-01-01'),
+                    max = Sys.Date()+days(90),
+                    language = "en",
+                    ranges = list("Today" = Sys.Date(),
+                                  "Yesterday" = Sys.Date() - 1,
+                                  "This Week" = c(floor_date(Sys.Date(),
+                                                             unit = 'week',
+                                                             getOption("lubridate.week.start", 1)),
+                                                  ceiling_date(Sys.Date(),
+                                                               unit = 'week',
+                                                               getOption("lubridate.week.start", 1))),
+                                  "Last 3 days" = c(Sys.Date() - 2, Sys.Date()),
+                                  "Last 7 days" = c(Sys.Date() - 6, Sys.Date()),
+                                  "This Month" = c(round_date(Sys.Date(),"month"),
+                                                   ceiling_date(Sys.Date(), "month") - days(1)),
+                                  "Last Month" = c(floor_date(Sys.Date(), "month") - months(1),
+                                                   ceiling_date(Sys.Date(), "month") - months(1)- days(1))
+                    ),
+                    style = "width:100%; border-radius:4px",
+                    class = "myclass",
                     icon = icon("calendar")
                 )
             )
@@ -409,31 +451,27 @@ ui <- dashboardPage(
         tabItems(
             tabItem(
                 'Main',
-                #DT::dataTableOutput("responses")
                 valueBoxOutput("candidatesBox"),
                 valueBoxOutput("contactsBox"),
-                valueBoxOutput("interviewsBox")
+                valueBoxOutput("interviewsBox"),
+                valueBoxOutput("completedinterviewsBox"),
+                valueBoxOutput("conversionPct")
             ),
             tabItem(
                 'Person',
-                actionButton('NewPerson','New Person'),
-                #verbatimTextOutput("test"),
+                actionButton('NewPerson','New Person',class = "btn btn-outline-secondary btn-lg"),
+                #verbatimTextOutput("text"),
                 DT::dataTableOutput("personTable")
-                # tableOutput("text")
             ),
             tabItem(
                 'Contact',
-                #actionButton('NewContact','New Contact'),
                 DT::dataTableOutput("contactTable"),
-                
                 verbatimTextOutput("time_zone_offset")
                 
             ),
             tabItem(
                 'Interviews',
-                #actionButton('NewInterview','New Interview'),
                 DT::dataTableOutput("interviewTable"),
-                # verbatimTextOutput("test"),
                 tags$style(".datepicker { z-index: 9999 !important; }"),
                 tags$style(
                     type = 'text/css',
@@ -473,7 +511,8 @@ server <- function(input, output, session) {
         mandatoryInterviewFilled <-
             vapply(mandatoryInterviewFields,
                    function(x) {
-                       !is.null(input[[x]]) && input[['interviewSrident']] != ""
+                       !is.null(input[[x]]) && input[['interviewSrident']] != "" &&
+                           as_datetime(mean(as.numeric(unlist(input[["interviewDateTime"]])))) >= floor_date(Sys.time(),'day') + hours(1)
                    },
                    logical(1))
         mandatoryInterviewFilled <- all(mandatoryInterviewFilled)
@@ -492,9 +531,7 @@ server <- function(input, output, session) {
     selectedInterviewID <- reactiveVal(0)
     time_zone_offset <- reactive({as.numeric(input$client_time_zone_offset)/60})
 
-    # input$testTime <- reactive({strftime(input$interviewTime)})
-    # output$test <- renderUI({strftime(input[['interviewTime']],'%T')})
-    output$test <- renderPrint({interviewFormData()})
+    output$text <- renderPrint({interviewFormData()})
     
     contactFormData <- reactive({
         data <- sapply(contactFields, function(x) input[[x]])
@@ -502,15 +539,9 @@ server <- function(input, output, session) {
     })
     interviewFormData <- reactive({
         data <- sapply(interviewFields, function(x) input[[x]])
-         #names(data)
         inputtime <- data["interviewDateTime"]
-        data["interviewDateTime"] <- as_datetime(as.numeric(data["interviewDateTime"])) - hours(time_zone_offset())     
-        # data["interviewDateTime"] <- strftime(as.numeric(as.character(data["interviewDateTime"])),
-        #                                         origin = '1970-01-01',)
-            
-        # data['interviewDateTime'] <- strftime(.,format = "%Y-%m-%d %H:%M:%S")
-         data
-        # strftime(data$,'%T')
+        data["interviewDateTime"] <- as_datetime(mean(as.numeric(unlist(inputtime)))) - hours(time_zone_offset())
+        data
     })
     
     
@@ -569,18 +600,25 @@ server <- function(input, output, session) {
     })
     
     output$personTable <- DT::renderDataTable({
-        # input$submit
-        # input$delete
-        # input$update
         data <- CandidateTable() %>% 
             mutate(created_date = as_datetime(created_date, tz = 'UTC'))
         DT::datatable({data},
                       selection = list(mode = "single"),
                       filter = list(position = 'top', clear = FALSE),
                       rownames = FALSE,
-                      options = list(dom = 'ftpri',
+                      extensions = c('Buttons','ColReorder'),
+                      options = list(dom = 'lfBtpri',
                                      order = list(10,'desc'),
-                                     pageLength = 100)) %>% 
+                                     pageLength = 100,
+                                     buttons = list('copy',
+                                                    list(
+                                                        extend = 'collection',
+                                                        buttons = c('csv','excel'),
+                                                        text = 'Download'
+                                                    )),
+                                     lengthMenu = list(c(100,250,500,1000,-1),
+                                                       list(100,250,500,1000,'All'))    
+                                     )) %>% 
             formatDate('created_date', method = 'toLocaleDateString')
     })
     
@@ -589,9 +627,19 @@ server <- function(input, output, session) {
                       selection = list(mode = "single"),
                       filter = list(position = 'top', clear = FALSE),
                       rownames = FALSE,
-                      options = list(dom = 'ftpri',
+                      extensions = c('Buttons','ColReorder'),
+                      options = list(dom = 'lBftpri',
                                      order = list(5,'desc'),
-                                     pageLength = 100)) %>% 
+                                     pageLength = 100,
+                                     buttons = list('copy',
+                                                    list(
+                                                        extend = 'collection',
+                                                        buttons = c('csv','excel'),
+                                                        text = 'Download'
+                                                    )),
+                                     lengthMenu = list(c(100,250,500,1000,-1),
+                                                       list(100,250,500,1000,'All'))
+                                     )) %>% 
             formatDate('created_date', method = 'toLocaleDateString')
     })
     
@@ -601,9 +649,19 @@ server <- function(input, output, session) {
                       selection = list(mode = "single"),
                       filter = list(position = 'top', clear = FALSE),
                       rownames = FALSE,
-                      options = list(dom = 'ftpri',
+                      extensions = c('Buttons','ColReorder'),
+                      options = list(dom = 'lBftpri',
                                      order = list(9,'desc'),
-                                     pageLength = 100)) %>% 
+                                     pageLength = 100,
+                                     buttons = list('copy',
+                                                    list(
+                                                        extend = 'collection',
+                                                        buttons = c('csv','excel'),
+                                                        text = 'Download'
+                                                    )),
+                                     lengthMenu = list(c(100,250,500,1000,-1),
+                                                       list(100,250,500,1000,'All'))
+                                     )) %>% 
             formatDate('created_date', method = 'toLocaleDateString') %>% 
             formatDate('interview_datetime', method = 'toLocaleString')
     })
@@ -666,24 +724,12 @@ server <- function(input, output, session) {
             contact <- ContactTable() %>% filter(aident == data$aident)
             interview <- InterviewTable() %>% filter(aident == data$aident)
             showModal(candidateClickModal(contactdata = contact,
-                                          interviewdata = interview))
-            #showModal(dataModalUpdate(data = data))
+                                          interviewdata = interview,
+                                          rowdata = data))
         }
         
     })
     
-    # observeEvent(input$contactTable_rows_selected, {
-    #     if (length(input$contactTable_rows_selected) > 0) {
-    #         data <- ContactTable()[input$contactTable_rows_selected,]
-    #         # output$text <- renderTable({data})
-    #         selectedAident(data$aident)
-    #         selectedRORsrident(data$ror_srident)
-    #         #selectedname$fullName <- paste(data$last_name,data$first_name,sep= ', ')
-    #         showModal(contactClickModal())
-    #         #showModal(dataModalUpdate(data = data))
-    #     }
-    #     
-    # })
     
     observeEvent(input$interviewTable_rows_selected, {
         if (length(input$interviewTable_rows_selected) > 0) {
@@ -756,31 +802,95 @@ server <- function(input, output, session) {
     })
     
     
+########### Dashboard Code ##############   
+    recruiterChosen <- reactive({input$dashboardSrident})
+    dashboardStartDate <- reactive({input$daterange[1]})
+    dashboardEndDate <- reactive({input$daterange[2]})
+    output$test <- renderDataTable({ContactTable() %>% filter(rep_name == recruiterChosen())})
+    
+    totalCand <- reactive({
+        table <- if(recruiterChosen() == 'OVERALL'){
+            CandidateTable()
+        }else{
+            CandidateTable() %>% filter(rep_name == recruiterChosen())
+        }
+        totalCand <- table %>% 
+            filter(created_date >= as.Date(dashboardStartDate()),
+                   created_date <= as.Date(dashboardEndDate())) %>% 
+            count()
+        return(totalCand)
+    })
+    
+    totalContacts <- reactive({
+        ConTable <- if(recruiterChosen() == 'OVERALL'){
+            ContactTable()
+        }else{
+            ContactTable() %>% filter(rep_name == recruiterChosen())
+        }
+        totalContacts <- ConTable %>% 
+            filter(created_date >= as.Date(dashboardStartDate()),
+                   created_date <= as.Date(dashboardEndDate()) +days(1)) %>%
+            count() %>%  sum(.,totalCand())
+    })
+    
+    intTable <- reactive({
+        Inttable <- if(recruiterChosen() == 'OVERALL'){
+            InterviewTable()
+        }else{
+            InterviewTable() %>% filter(rep_name == recruiterChosen())
+        }
+    })
+    
+    totalInterviews <- reactive({
+        totalInterviews <- intTable() %>% 
+            filter(created_date >= as.Date(dashboardStartDate()),
+                   created_date <= as.Date(dashboardEndDate()) + days(1)) %>%
+            count()
+        return(totalInterviews)
+    })
+    
+    CompletedInterviews <- reactive({
+        intTable() %>%
+            filter(created_date >= as.Date(dashboardStartDate()),
+                   created_date <= as.Date(dashboardEndDate()) + days(1),
+                   interview_status == 'SHOWED UP') %>%
+            count()
+    })
+    
+    ConversionPct <- reactive({
+        round((CompletedInterviews()/totalContacts())*100,1)
+    })
+    
     output$candidatesBox <- renderValueBox({
-        totalCand <- sum(CandidateTable()$created_date >= floor_date(Sys.Date(),
-                                                     unit = 'week',
-                                                     getOption("lubridate.week.start", 1)))
         valueBox(
-            totalCand, "New Candidates", icon = icon("users"),
+            totalCand(), "New Candidates", icon = icon("users"),
             color = "yellow"
         )
     })
     output$contactsBox <- renderValueBox({
-        totalCand <- sum(ContactTable()$created_date >= floor_date(Sys.Date(),
-                                                                     unit = 'week',
-                                                                     getOption("lubridate.week.start", 1)))
         valueBox(
-            totalCand, "New Contacts", icon = icon("phone-alt"),
+            totalContacts(), "Total Contacts", icon = icon("phone-alt"),
             color = "blue"
         )
     })
     output$interviewsBox <- renderValueBox({
-        totalCand <- sum(InterviewTable()$created_date >= floor_date(Sys.Date(),
-                                                                   unit = 'week',
-                                                                   getOption("lubridate.week.start", 1)))
         valueBox(
-            totalCand, "New Interviews", icon = icon("calendar"),
+            totalInterviews(), "New Interviews", icon = icon("calendar"),
             color = "green"
+        )
+    })
+    
+    output$completedinterviewsBox <- renderValueBox({
+        valueBox(
+            CompletedInterviews(), "Completed Interviews", icon = icon("calendar"),
+            color = "green"
+        )
+    })
+    
+    output$conversionPct <- renderValueBox({
+        valueBox(
+            paste0(ConversionPct(),'%'), "Conversion Pct", icon = icon("calendar"),
+            color = "red"
         )
     })
 
