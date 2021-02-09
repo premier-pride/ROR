@@ -151,7 +151,7 @@ interviewModal <- function(aident = 0, srident = 0, name = NULL) {
             min = as.Date('2021-01-01'),
             max = Sys.Date()+days(90),
             options = daterangepickerOptions(timePicker = TRUE,
-                                             timePickerIncrement = 10,
+                                             timePickerIncrement = 5,
                                              autoUpdateInput = FALSE,
                                              locale = list(
                                                  format = 'YYYY-MM-DD hh:mm'
@@ -554,12 +554,18 @@ server <- function(input, output, session) {
         input$submit
         input$delete
         input$update
+        contact <- loadData('staffing-data','ROR_ContactRoot') %>% 
+            count(aident,name = 'contacts')
+        
         loadData('staffing-data','ROR_CandidateRoot') %>% 
             mutate(branch_id = as.character(branch_id)) %>% 
             left_join(BranchData,by = c("branch_id")) %>% 
             left_join(ServiceRepData, by = c("ror_srident" = "srident")) %>% 
+            left_join(contact, by = c("aident")) %>%
+            replace_na(list(contacts = 0)) %>%
+            mutate(contacts = contacts + 1) %>%
             select(aident, last_name, first_name,
-                   phone_number, cell_number, region,area,metro,
+                   phone_number, cell_number,contacts, region,area,metro,
                    branch_name,rep_name,created_date)
     })
     
@@ -567,7 +573,6 @@ server <- function(input, output, session) {
         input$submit
         input$delete
         input$contactUpdate
-        
         loadData('staffing-data','ROR_ContactRoot') %>% 
             mutate(created_date = as_datetime(created_date, tz = 'UTC')) %>% 
             left_join(ServiceRepData, by = c("ror_srident" = "srident")) %>%
@@ -608,7 +613,7 @@ server <- function(input, output, session) {
                       rownames = FALSE,
                       extensions = c('Buttons','ColReorder'),
                       options = list(dom = 'lfBtpri',
-                                     order = list(10,'desc'),
+                                     order = list(11,'desc'),
                                      pageLength = 100,
                                      buttons = list('copy',
                                                     list(
