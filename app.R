@@ -214,10 +214,11 @@ contactClickModal <- function(){
 }
 
 
-interviewClickModal <- function(){
+interviewClickModal <- function(name, aident){
     intStatusLis <- within(intStatusList,rm(PENDING))
     modalDialog(
-        h3("How did the interview go?"),
+        h3("Change Interview Status"),
+        h4(glue("Aident: {aident}")),
         selectInput('interviewStatusId', 'Interview Status', 
                     choices = c('',intStatusLis),
                     selected = ''),
@@ -471,6 +472,17 @@ ui <- dashboardPage(
             ),
             tabItem(
                 'Interviews',
+                fluidRow(
+                    column(width = 2,selectInput('interviewRepSrident', 'Recruiter',
+                                                 choices = c('OVERALL',srList),
+                                                 selected = 'OVERALL')),
+                    column(width = 2,selectInput('interviewBranch', 'Branch',
+                                                 choices = c('OVERALL',sort(BranchData$branch_name)),
+                                                 selected = 'OVERALL')),
+                    column(width = 2,selectInput('interviewStatus', 'Interview Status',
+                                                 choices = c('OVERALL', intStatusList),
+                                                 selected = 'OVERALL'))
+                ),
                 DT::dataTableOutput("interviewTable"),
                 tags$style(".datepicker { z-index: 9999 !important; }"),
                 tags$style(
@@ -591,17 +603,23 @@ server <- function(input, output, session) {
         loadData('staffing-data','ROR_InterviewRoot') %>% 
             mutate(created_date = as_datetime(created_date, tz = 'UTC'),
                    interview_status_id = as.integer(interview_status_id),
-                   aident = as.integer(aident)) %>% 
+                   aident = as.integer(aident)) %>%
+            {if(input$interviewRepSrident != 'OVERALL')
+                filter(.,ror_srident == input$interviewRepSrident) else .} %>% 
+            {if(input$interviewStatus != 'OVERALL')
+                filter(.,interview_status_id == input$interviewStatus) else .} %>% 
             left_join(ServiceRepData, by = c("ror_srident" = "srident")) %>% 
             left_join(InterviewStatusData, by = c("interview_status_id")) %>% 
             inner_join(CandidateTable(),by = c("aident")) %>%
+            {if(input$interviewBranch != 'OVERALL')
+                filter(.,branch_name == input$interviewBranch) else .} %>% 
             mutate(emp_name = paste(last_name,first_name,sep = ', ')) %>% 
             select(interview_id,aident,emp_name,phone_number,cell_number,
                    rep_name = rep_name.x,
                    branch_name,
                    interview_datetime,
                    interview_status,
-                   created_date = created_date.x)
+                   created_date = created_date.x) 
     })
     
     output$personTable <- DT::renderDataTable({
@@ -745,7 +763,7 @@ server <- function(input, output, session) {
                 selectedRORsrident(data$ror_srident)
                 selectedInterviewID(data$interview_id)
                 selectedname$fullName <- paste(data$last_name,data$first_name,sep= ', ')
-                showModal(interviewClickModal())
+                showModal(interviewClickModal(name = selectedname$fullName, selectedAident()))
             }
         }
         
@@ -785,12 +803,12 @@ server <- function(input, output, session) {
         
     })
     
-    observeEvent(input$NewInterview,priority = 1,{
-        showModal(interviewModal(aident = selectedAident(),
-                               srident = selectedRORsrident(),
-                               name = selectedname$fullName))
-    })
-    
+    # observeEvent(input$NewInterview,priority = 1,{
+    #     showModal(interviewModal(aident = selectedAident(),
+    #                            srident = selectedRORsrident(),
+    #                            name = selectedname$fullName))
+    # })
+    # 
     observeEvent(input$updateInterviewStatus, priority = 1, {
         if(input[['interviewStatusId']] == 2)
         {
