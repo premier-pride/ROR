@@ -406,7 +406,7 @@ ui <- dashboardPage(
                     icon = icon("calendar")
                 ),
                 selectInput("dashboardSrident","Recruiter",
-                            choices = c('OVERALL',ServiceRepData$rep_name),
+                            choices = c('OVERALL', ServiceRepData$rep_name),
                             selected = 'OVERALL'),
                 tags$head(tags$style(".myclass {background-color: #222d32;}")),
                 daterangepicker(
@@ -474,14 +474,16 @@ ui <- dashboardPage(
                 'Interviews',
                 fluidRow(
                     column(width = 2,selectInput('interviewRepSrident', 'Recruiter',
-                                                 choices = c('OVERALL',srList),
+                                                 choices = c('OVERALL',ServiceRepData$rep_name),
                                                  selected = 'OVERALL')),
                     column(width = 2,selectInput('interviewBranch', 'Branch',
                                                  choices = c('OVERALL',sort(BranchData$branch_name)),
                                                  selected = 'OVERALL')),
                     column(width = 2,selectInput('interviewStatus', 'Interview Status',
-                                                 choices = c('OVERALL', intStatusList),
-                                                 selected = 'OVERALL'))
+                                                 choices = c('OVERALL', InterviewStatusData$interview_status),
+                                                 selected = 'OVERALL')),
+                    actionButton("reset", "Reset", width = '15%',
+                                 align = "bottom", style='margin-top:24px; font-size:110%'),
                 ),
                 DT::dataTableOutput("interviewTable"),
                 tags$style(".datepicker { z-index: 9999 !important; }"),
@@ -556,6 +558,12 @@ server <- function(input, output, session) {
         data
     })
     
+    observeEvent(input$reset, {
+        shinyjs::reset("interviewRepSrident")
+        shinyjs::reset("interviewBranch")
+        shinyjs::reset("interviewStatus")
+    })
+    
     
     
 
@@ -604,15 +612,9 @@ server <- function(input, output, session) {
             mutate(created_date = as_datetime(created_date, tz = 'UTC'),
                    interview_status_id = as.integer(interview_status_id),
                    aident = as.integer(aident)) %>%
-            {if(input$interviewRepSrident != 'OVERALL')
-                filter(.,ror_srident == input$interviewRepSrident) else .} %>% 
-            {if(input$interviewStatus != 'OVERALL')
-                filter(.,interview_status_id == input$interviewStatus) else .} %>% 
             left_join(ServiceRepData, by = c("ror_srident" = "srident")) %>% 
             left_join(InterviewStatusData, by = c("interview_status_id")) %>% 
             inner_join(CandidateTable(),by = c("aident")) %>%
-            {if(input$interviewBranch != 'OVERALL')
-                filter(.,branch_name == input$interviewBranch) else .} %>% 
             mutate(emp_name = paste(last_name,first_name,sep = ', ')) %>% 
             select(interview_id,aident,emp_name,phone_number,cell_number,
                    rep_name = rep_name.x,
@@ -668,7 +670,13 @@ server <- function(input, output, session) {
     
 
     output$interviewTable <-  DT::renderDataTable({
-        DT::datatable({InterviewTable()},
+        DT::datatable({InterviewTable() %>% 
+                {if(input$interviewRepSrident != 'OVERALL')
+                    filter(.,rep_name == input$interviewRepSrident) else .} %>% 
+                {if(input$interviewStatus != 'OVERALL')
+                    filter(.,interview_status == input$interviewStatus) else .} %>% 
+                {if(input$interviewBranch != 'OVERALL')
+                    filter(.,branch_name == input$interviewBranch) else .}},
                       selection = list(mode = "single"),
                       filter = list(position = 'top', clear = FALSE),
                       rownames = FALSE,
