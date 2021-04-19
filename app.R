@@ -21,6 +21,10 @@ options(mysql = list(
     "port" = 3306
 ))
 
+onStop(function() {
+    poolClose(pool)
+})
+
 
 glue_sql <- function(..., .con) {
     connection <- pool::poolCheckout(.con)
@@ -425,7 +429,7 @@ ui <- dashboardPage(
                                                                getOption("lubridate.week.start", 1))),
                                   "Last 3 days" = c(Sys.Date() - 2, Sys.Date()),
                                   "Last 7 days" = c(Sys.Date() - 6, Sys.Date()),
-                                  "This Month" = c(round_date(Sys.Date(),"month"),
+                                  "This Month" = c(floor_date(Sys.Date(),"month"),
                                                    ceiling_date(Sys.Date(), "month") - days(1)),
                                   "Last Month" = c(floor_date(Sys.Date(), "month") - months(1),
                                                    ceiling_date(Sys.Date(), "month") - months(1)- days(1))
