@@ -253,7 +253,7 @@ createCandidateData <- function(data) {
     )
    print(query)
 
-    dbGetQuery(db, query)
+    try(dbGetQuery(db, query), silent = TRUE)
     poolClose(db)
 }
 
